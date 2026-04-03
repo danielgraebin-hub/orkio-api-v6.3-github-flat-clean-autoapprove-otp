@@ -1166,6 +1166,9 @@ def ensure_schema(db: Session):
         db.execute(text("ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS whatsapp VARCHAR"))
         db.execute(text("ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS onboarding_completed BOOLEAN NOT NULL DEFAULT FALSE"))
         db.execute(text("ALTER TABLE IF EXISTS threads ADD COLUMN IF NOT EXISTS meta TEXT"))
+        db.execute(text("ALTER TABLE IF EXISTS threads ADD COLUMN IF NOT EXISTS created_at BIGINT"))
+        db.execute(text("UPDATE threads SET created_at = EXTRACT(EPOCH FROM NOW())::BIGINT WHERE created_at IS NULL"))
+        db.execute(text("ALTER TABLE IF EXISTS threads ALTER COLUMN created_at SET DEFAULT EXTRACT(EPOCH FROM NOW())::BIGINT"))
         db.execute(text("ALTER TABLE IF EXISTS messages ADD COLUMN IF NOT EXISTS user_name VARCHAR"))
         db.execute(text("ALTER TABLE IF EXISTS messages ADD COLUMN IF NOT EXISTS agent_id VARCHAR"))
         db.execute(text("ALTER TABLE IF EXISTS messages ADD COLUMN IF NOT EXISTS agent_name VARCHAR"))
@@ -1222,11 +1225,7 @@ def ensure_schema(db: Session):
         db.execute(text("ALTER TABLE IF EXISTS cost_events ADD COLUMN IF NOT EXISTS pricing_version VARCHAR NOT NULL DEFAULT '2026-02-18'"))
         db.execute(text("ALTER TABLE IF EXISTS cost_events ADD COLUMN IF NOT EXISTS pricing_snapshot TEXT"))
         db.execute(text("CREATE INDEX IF NOT EXISTS ix_cost_events_org_created ON cost_events(org_slug, created_at)"))
-        # PATCH0100_14 / schema backfill: agent embeddings + agent voice/avatar
-        db.execute(text("ALTER TABLE IF EXISTS agents ADD COLUMN IF NOT EXISTS embedding_model VARCHAR"))
-        db.execute(text("ALTER TABLE IF EXISTS agents ADD COLUMN IF NOT EXISTS embedding_provider VARCHAR"))
-        db.execute(text("ALTER TABLE IF EXISTS agents ADD COLUMN IF NOT EXISTS embedding_dim INTEGER"))
-        db.execute(text("ALTER TABLE IF EXISTS agents ADD COLUMN IF NOT EXISTS default_collection VARCHAR"))
+        # PATCH0100_14 (Pilar D): Agent voice + avatar
         db.execute(text("ALTER TABLE IF EXISTS agents ADD COLUMN IF NOT EXISTS voice_id VARCHAR"))
         db.execute(text("ALTER TABLE IF EXISTS agents ADD COLUMN IF NOT EXISTS avatar_url VARCHAR"))
         # PATCH0100_28: Summit Hardening + Legal Compliance
@@ -5961,7 +5960,7 @@ async def chat_stream(
     tid = (inp.thread_id or "").strip() or None
     try:
         if not tid:
-            t = Thread(id=new_id(), org_slug=org, title="Chat")
+            t = Thread(id=new_id(), org_slug=org, title="Chat", created_at=now_ts())
             db.add(t)
             db.commit()
             tid = t.id

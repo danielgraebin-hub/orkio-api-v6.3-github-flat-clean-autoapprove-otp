@@ -1176,6 +1176,9 @@ def ensure_schema(db: Session):
         db.execute(text("ALTER TABLE IF EXISTS files ADD COLUMN IF NOT EXISTS uploader_id VARCHAR"))
         db.execute(text("ALTER TABLE IF EXISTS files ADD COLUMN IF NOT EXISTS uploader_name VARCHAR"))
         db.execute(text("ALTER TABLE IF EXISTS files ADD COLUMN IF NOT EXISTS uploader_email VARCHAR"))
+        # File scope support for chat/thread retrieval
+        db.execute(text("ALTER TABLE IF EXISTS files ADD COLUMN IF NOT EXISTS scope_agent_id VARCHAR"))
+        db.execute(text("ALTER TABLE IF EXISTS files ADD COLUMN IF NOT EXISTS scope_thread_id VARCHAR"))
         db.execute(text("""
         CREATE TABLE IF NOT EXISTS cost_events (
             id VARCHAR PRIMARY KEY,

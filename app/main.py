@@ -1166,9 +1166,6 @@ def ensure_schema(db: Session):
         db.execute(text("ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS whatsapp VARCHAR"))
         db.execute(text("ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS onboarding_completed BOOLEAN NOT NULL DEFAULT FALSE"))
         db.execute(text("ALTER TABLE IF EXISTS threads ADD COLUMN IF NOT EXISTS meta TEXT"))
-        db.execute(text("ALTER TABLE IF EXISTS threads ADD COLUMN IF NOT EXISTS created_at BIGINT"))
-        db.execute(text("UPDATE threads SET created_at = EXTRACT(EPOCH FROM NOW())::BIGINT WHERE created_at IS NULL"))
-        db.execute(text("ALTER TABLE IF EXISTS threads ALTER COLUMN created_at SET DEFAULT EXTRACT(EPOCH FROM NOW())::BIGINT"))
         db.execute(text("ALTER TABLE IF EXISTS messages ADD COLUMN IF NOT EXISTS user_name VARCHAR"))
         db.execute(text("ALTER TABLE IF EXISTS messages ADD COLUMN IF NOT EXISTS agent_id VARCHAR"))
         db.execute(text("ALTER TABLE IF EXISTS messages ADD COLUMN IF NOT EXISTS agent_name VARCHAR"))
@@ -1176,9 +1173,7 @@ def ensure_schema(db: Session):
         db.execute(text("ALTER TABLE IF EXISTS files ADD COLUMN IF NOT EXISTS uploader_id VARCHAR"))
         db.execute(text("ALTER TABLE IF EXISTS files ADD COLUMN IF NOT EXISTS uploader_name VARCHAR"))
         db.execute(text("ALTER TABLE IF EXISTS files ADD COLUMN IF NOT EXISTS uploader_email VARCHAR"))
-        # File scope support for chat/thread retrieval
-        db.execute(text("ALTER TABLE IF EXISTS files ADD COLUMN IF NOT EXISTS scope_agent_id VARCHAR"))
-        db.execute(text("ALTER TABLE IF EXISTS files ADD COLUMN IF NOT EXISTS scope_thread_id VARCHAR"))
+        db.execute(text("ALTER TABLE IF EXISTS files ADD COLUMN IF NOT EXISTS origin_thread_id VARCHAR"))
         db.execute(text("""
         CREATE TABLE IF NOT EXISTS cost_events (
             id VARCHAR PRIMARY KEY,
@@ -5963,7 +5958,7 @@ async def chat_stream(
     tid = (inp.thread_id or "").strip() or None
     try:
         if not tid:
-            t = Thread(id=new_id(), org_slug=org, title="Chat", created_at=now_ts())
+            t = Thread(id=new_id(), org_slug=org, title="Chat")
             db.add(t)
             db.commit()
             tid = t.id

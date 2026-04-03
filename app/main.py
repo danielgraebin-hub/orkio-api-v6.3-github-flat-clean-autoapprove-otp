@@ -1151,9 +1151,171 @@ def _audit(db: Session, org_slug: str, user_id: Optional[str], action: str, meta
             pass
 
 
+
+
+def _ensure_bootstrap_tables(db: Session) -> None:
+    """Create foundational tables for fresh Railway databases before ALTER/seed logic runs.
+    This is intentionally idempotent and limited to the tables required for auth + first app entry.
+    """
+    db.execute(text("""
+    CREATE TABLE IF NOT EXISTS users (
+        id VARCHAR PRIMARY KEY,
+        org_slug VARCHAR NOT NULL,
+        email VARCHAR NOT NULL,
+        name VARCHAR,
+        role VARCHAR DEFAULT 'user',
+        salt VARCHAR,
+        pw_hash VARCHAR,
+        created_at BIGINT NOT NULL,
+        approved_at BIGINT,
+        company VARCHAR,
+        profile_role VARCHAR,
+        user_type VARCHAR,
+        intent VARCHAR,
+        notes TEXT,
+        country VARCHAR,
+        language VARCHAR,
+        whatsapp VARCHAR,
+        onboarding_completed BOOLEAN NOT NULL DEFAULT FALSE,
+        signup_code_label VARCHAR,
+        signup_source VARCHAR,
+        usage_tier VARCHAR DEFAULT 'summit_standard',
+        product_scope VARCHAR,
+        terms_accepted_at BIGINT,
+        terms_version VARCHAR,
+        marketing_consent BOOLEAN DEFAULT FALSE
+    )
+    """))
+    db.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_org_email ON users(org_slug, email)"))
+
+    db.execute(text("""
+    CREATE TABLE IF NOT EXISTS audit_logs (
+        id VARCHAR PRIMARY KEY,
+        org_slug VARCHAR NOT NULL,
+        user_id VARCHAR,
+        action VARCHAR NOT NULL,
+        meta TEXT,
+        request_id VARCHAR,
+        path VARCHAR,
+        status_code INTEGER,
+        latency_ms INTEGER,
+        created_at BIGINT NOT NULL
+    )
+    """))
+    db.execute(text("CREATE INDEX IF NOT EXISTS ix_audit_logs_org_created ON audit_logs(org_slug, created_at)"))
+
+    db.execute(text("""
+    CREATE TABLE IF NOT EXISTS threads (
+        id VARCHAR PRIMARY KEY,
+        org_slug VARCHAR NOT NULL,
+        user_id VARCHAR,
+        title VARCHAR NOT NULL,
+        meta TEXT,
+        created_at BIGINT NOT NULL,
+        updated_at BIGINT
+    )
+    """))
+    db.execute(text("CREATE INDEX IF NOT EXISTS ix_threads_org_created ON threads(org_slug, created_at)"))
+
+    db.execute(text("""
+    CREATE TABLE IF NOT EXISTS messages (
+        id VARCHAR PRIMARY KEY,
+        org_slug VARCHAR NOT NULL,
+        thread_id VARCHAR NOT NULL,
+        user_id VARCHAR,
+        user_name VARCHAR,
+        role VARCHAR NOT NULL,
+        content TEXT NOT NULL,
+        agent_id VARCHAR,
+        agent_name VARCHAR,
+        client_message_id VARCHAR,
+        created_at BIGINT NOT NULL
+    )
+    """))
+    db.execute(text("CREATE INDEX IF NOT EXISTS ix_messages_thread_created ON messages(thread_id, created_at)"))
+
+    db.execute(text("""
+    CREATE TABLE IF NOT EXISTS agents (
+        id VARCHAR PRIMARY KEY,
+        org_slug VARCHAR NOT NULL,
+        name VARCHAR NOT NULL,
+        description TEXT,
+        system_prompt TEXT,
+        model VARCHAR,
+        temperature VARCHAR,
+        rag_enabled BOOLEAN DEFAULT TRUE,
+        rag_top_k INTEGER DEFAULT 6,
+        is_default BOOLEAN DEFAULT FALSE,
+        voice_id VARCHAR,
+        avatar_url VARCHAR,
+        created_at BIGINT NOT NULL,
+        updated_at BIGINT NOT NULL
+    )
+    """))
+    db.execute(text("CREATE INDEX IF NOT EXISTS ix_agents_org_name ON agents(org_slug, name)"))
+
+    db.execute(text("""
+    CREATE TABLE IF NOT EXISTS agent_knowledge (
+        id VARCHAR PRIMARY KEY,
+        org_slug VARCHAR NOT NULL,
+        agent_id VARCHAR NOT NULL,
+        file_id VARCHAR NOT NULL,
+        enabled BOOLEAN NOT NULL DEFAULT TRUE,
+        created_at BIGINT
+    )
+    """))
+
+    db.execute(text("""
+    CREATE TABLE IF NOT EXISTS agent_links (
+        id VARCHAR PRIMARY KEY,
+        org_slug VARCHAR NOT NULL,
+        source_agent_id VARCHAR NOT NULL,
+        target_agent_id VARCHAR NOT NULL,
+        enabled BOOLEAN NOT NULL DEFAULT TRUE,
+        created_at BIGINT
+    )
+    """))
+
+    db.execute(text("""
+    CREATE TABLE IF NOT EXISTS files (
+        id VARCHAR PRIMARY KEY,
+        org_slug VARCHAR NOT NULL,
+        name VARCHAR NOT NULL,
+        mime_type VARCHAR,
+        size_bytes BIGINT,
+        storage_url TEXT,
+        uploader_id VARCHAR,
+        uploader_name VARCHAR,
+        uploader_email VARCHAR,
+        created_at BIGINT NOT NULL
+    )
+    """))
+
+    db.execute(text("""
+    CREATE TABLE IF NOT EXISTS file_texts (
+        id VARCHAR PRIMARY KEY,
+        org_slug VARCHAR NOT NULL,
+        file_id VARCHAR NOT NULL,
+        text_content TEXT,
+        created_at BIGINT NOT NULL
+    )
+    """))
+
+    db.execute(text("""
+    CREATE TABLE IF NOT EXISTS file_chunks (
+        id VARCHAR PRIMARY KEY,
+        org_slug VARCHAR NOT NULL,
+        file_id VARCHAR NOT NULL,
+        chunk_index INTEGER NOT NULL,
+        content TEXT NOT NULL,
+        created_at BIGINT NOT NULL
+    )
+    """))
+
 def ensure_schema(db: Session):
     """Best-effort schema guard (Railway) + logs."""
     try:
+        _ensure_bootstrap_tables(db)
         db.execute(text("ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS approved_at BIGINT"))
         db.execute(text("ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS role VARCHAR"))
         db.execute(text("ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS company VARCHAR"))

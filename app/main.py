@@ -2433,23 +2433,44 @@ def validate_runtime_env() -> None:
 
 @app.on_event("startup")
 def _startup_schema_guard():
-    # Disabled by default: production must use Alembic migrations (set ENABLE_SCHEMA_GUARD=true to enable)
-    if os.getenv("ENABLE_SCHEMA_GUARD", "false").lower() not in ("1","true","yes"):
+    """
+    Development-only schema guard.
+
+    Production must use Alembic as the single source of truth for schema changes.
+    This helper remains available only for local/dev recovery when explicitly enabled.
+    """
+    if os.getenv("ENABLE_SCHEMA_GUARD", "false").lower() not in ("1", "true", "yes"):
         return
+
+    app_env = _clean_env(os.getenv("APP_ENV", "production"), default="production").lower()
+    if app_env == "production":
+        try:
+            logger.warning(
+                "ENABLE_SCHEMA_GUARD=true ignored in production; use Alembic migrations instead"
+            )
+        except Exception:
+            pass
+        return
+
     def _do_schema_guard():
         from .db import SessionLocal
+
         if SessionLocal is None:
             return
+
         db = SessionLocal()
         try:
             ensure_schema(db)
             try:
-                _try_refresh_openai_pricing(db, org=os.getenv("DEFAULT_TENANT") or "public")
+                _try_refresh_openai_pricing(
+                    db, org=os.getenv("DEFAULT_TENANT") or "public"
+                )
             except Exception:
                 pass
         finally:
             db.close()
-    _run_with_timeout(_do_schema_guard, "SCHEMA_GUARD", timeout_sec=15)
+
+    _run_with_timeout(_do_schema_guard, "SCHEMA_GUARD_DEV_ONLY", timeout_sec=15)
 
 
 
@@ -2540,12 +2561,20 @@ def _startup():
 
         def _do_post_bootstrap_db_tasks():
             from .db import SessionLocal  # type: ignore
+
             if SessionLocal is None:
                 return
+
             db = SessionLocal()
             try:
-                ensure_schema(db)
+                # IMPORTANT:
+                # Production baseline must come from Alembic migrations, not runtime ALTERs.
+                # Keep startup DB work limited to idempotent seed/bootstrap tasks only.
                 _seed_default_summit_codes(db, org=default_tenant() or "public")
+                try:
+                    _try_refresh_openai_pricing(db, org=default_tenant() or "public")
+                except Exception:
+                    pass
             finally:
                 db.close()
 
